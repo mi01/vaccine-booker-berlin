@@ -412,7 +412,7 @@ def main():
     for i, attestation_type in enumerate(attestation_types):
         print('* [%s] %s' % (i, attestation_type))
     try:
-        print('Chose attestation type:', end=' ', flush=True)
+        print('Choose attestation type:', end=' ', flush=True)
         attestation_type = int(sys.stdin.readline().strip())
         if attestation_type < 0 or attestation_type >= len(attestation_types):
             raise ValueError()
