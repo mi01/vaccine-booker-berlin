@@ -428,7 +428,7 @@ def main():
 
     patients = docto.get_patients()
     if len(patients) == 0:
-        print("Please fill your patient data on Doctolib Website.")
+        print("Please fill your patient data on Doctolib website.")
         return 1
     if len(patients) > 1:
         print('Available patients are:')
@@ -445,6 +445,11 @@ def main():
                 break
     else:
         docto.patient = patients[0]
+
+    if not docto.patient['phone_number'] or docto.patient['phone_number'] == '':
+        # Booking fails without a phone number
+        print("Please enter the phone number of the patient on the Doctolib website.")
+        return 1
 
     while True:
         if docto.try_to_book():
