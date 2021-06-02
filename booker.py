@@ -78,11 +78,18 @@ class CenterBookingPage(JsonPage):
 
 
 class AvailabilitiesPage(JsonPage):
-    def find_best_slot(self, limit=True):
+    def find_best_first_slot(self, start_date, period_length):
         for a in self.doc['availabilities']:
-            if limit and parse_date(a['date']).date() > datetime.date.today() + relativedelta(weeks=2):
+            d = parse_date(a['date']).date()
+            if d < start_date or d > start_date + relativedelta(days=period_length):
                 continue
 
+            if len(a['slots']) == 0:
+                continue
+            return a['slots'][-1]
+
+    def find_best_second_slot(self):
+        for a in self.doc['availabilities']:
             if len(a['slots']) == 0:
                 continue
             return a['slots'][-1]
@@ -142,7 +149,7 @@ class Doctolib(LoginBrowser):
 
         self.session = session
 
-    def __init__(self, *args, attestation_type=5, include_astrazeneca=False, **kwargs):
+    def __init__(self, *args, attestation_type, start_date, period_length, include_astrazeneca, **kwargs):
         super().__init__(*args, **kwargs)
         self.session.headers['sec-fetch-dest'] = 'document'
         self.session.headers['sec-fetch-mode'] = 'navigate'
@@ -162,6 +169,8 @@ class Doctolib(LoginBrowser):
         self._logged = False
         self.patient = None
         self.attestation_type = attestation_type
+        self.start_date = start_date
+        self.period_length = period_length
 
     @property
     def logged(self):
@@ -240,7 +249,8 @@ class Doctolib(LoginBrowser):
             log('No availabilities in this center', color='red')
             return False
 
-        slot = self.page.find_best_slot()
+        slot = self.page.find_best_first_slot(
+            self.start_date, self.period_length)
         if not slot:
             log('First slot not found :(', color='red')
             return False
@@ -285,7 +295,7 @@ class Doctolib(LoginBrowser):
             log('Error: %s', type(err).__name__, color='red')
             return False
 
-        second_slot = self.page.find_best_slot(limit=False)
+        second_slot = self.page.find_best_second_slot()
         if not second_slot:
             log('No second shot found!', color='red')
             return False
@@ -354,7 +364,7 @@ class Doctolib(LoginBrowser):
                 'phone_number': self.patient['phone_number']
                 }
 
-        # Doctolib does not seem to check the token ^^
+        # Doctolib does not seem to check the token
         # headers['x-csrf-token'] = self.page.response.headers['x-csrf-token']
 
         try:
@@ -383,11 +393,15 @@ class Doctolib(LoginBrowser):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Book a vaccine slot on Doctolib in Berlin")
+        description="Book a vaccination slot on Doctolib in Berlin")
     parser.add_argument('--debug', '-d', action='store_true',
                         help='show debug information')
     parser.add_argument('--astrazeneca', '-az',
                         action='store_true', help='Include AstraZeneca vaccine')
+    parser.add_argument('--start-date', type=datetime.date.fromisoformat,
+                        help='Start date of search period (yyyy-mm-dd)')
+    parser.add_argument('--period-length', type=int, default=14,
+                        help='Length of the search period in of days after the start date')
     parser.add_argument('username', help='Doctolib username')
     parser.add_argument('password', nargs='?', help='Doctolib password')
     args = parser.parse_args()
@@ -401,10 +415,8 @@ def main():
     else:
         responses_dirname = None
 
-    if args.astrazeneca:
-        include_astrazeneca = True
-    else:
-        include_astrazeneca = False
+    include_astrazeneca = True if args.astrazeneca else False
+    start_date = datetime.date.today() if not args.start_date else args.start_date
 
     attestation_types = ['Einladungsschreiben', 'Ärztliches Attest',
                          'Arbeitgeberbescheinigung', 'Altersnachweis', 'Dienstausweis', 'Sonstiges']
@@ -420,8 +432,9 @@ def main():
         print('Attestation type must be a valid number!')
         return 1
 
-    docto = Doctolib(args.username, args.password, attestation_type=attestation_type, include_astrazeneca=include_astrazeneca,
-                     responses_dirname=responses_dirname)
+    docto = Doctolib(args.username, args.password, attestation_type=attestation_type,
+                     start_date=start_date, period_length=args.period_length,
+                     include_astrazeneca=include_astrazeneca, responses_dirname=responses_dirname)
     if not docto.do_login():
         print('Could not login!')
         return 1
