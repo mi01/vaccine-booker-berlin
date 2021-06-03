@@ -5,7 +5,7 @@ This python script books automatically a slot on Doctolib in one of the public v
 ### Python dependencies
 
 - [woob](https://woob.tech)
-- cloudscraper
+- [cloudscraper](https://github.com/venomous/cloudscraper)
 - dateutil
 - termcolor
 
@@ -23,4 +23,4 @@ Run:
 python3 booker.py <email> [password]
 ```
 
-By default AstraZeneca vaccine is excluded. You can include it with `--astrazeneca` or `-az`. You can also restrict the search period, by defining the start date with `--start-date <yyyy-mm-dd>` (default value is the current date) and the amount of days after the start date with `--period-length <DAYS>` (by default 14 days).
+By default AstraZeneca vaccine is excluded. You can include it with `--astrazeneca` or `-az`. You can also restrict the search period, by defining the start date with `--start-date <yyyy-mm-dd>` (default value is the current date) and the amount of days after the start date with `--period-length <days>` (by default 14 days).
