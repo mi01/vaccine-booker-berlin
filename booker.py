@@ -106,8 +106,8 @@ class AppointmentPage(JsonPage):
 class AppointmentEditPage(JsonPage):
     def get_custom_fields(self):
         for field in self.doc['appointment']['custom_fields']:
-            # if field['required']:
-            yield field
+            if field['required']:
+                yield field
 
     def get_appointment_start_date(self):
         return self.doc['appointment']['start_date']
@@ -184,13 +184,18 @@ class Doctolib(LoginBrowser):
                                 'password': self.password,
                                 'remember': True,
                                 'remember_username': True})
-        except (ClientError, ServerError):
+        except (ClientError, ServerError) as err:
+            log('Error: %s', str(err), color='red')
             return False
 
         return True
 
     def get_patients(self):
-        self.master_patient.go()
+        try:
+            self.master_patient.go()
+        except Exception as err:
+            log('Error: %s', str(err), color='red')
+            return None
 
         return self.page.get_patients()
 
@@ -198,7 +203,7 @@ class Doctolib(LoginBrowser):
         try:
             center_page = self.center_booking.go()
         except Exception as err:
-            log('Error: %s', type(err).__name__, color='red')
+            log('Error: %s', str(err), color='red')
             return False
 
         profile_id = self.page.get_profile_id()
@@ -237,7 +242,7 @@ class Doctolib(LoginBrowser):
                                                'destroy_temporary': 'true',
                                                'limit': 3})
             except Exception as err:
-                log('Error: %s', type(err).__name__, color='red')
+                log('Error: %s', str(err), color='red')
                 return False
 
             if 'next_slot' in self.page.doc:
@@ -275,7 +280,7 @@ class Doctolib(LoginBrowser):
         try:
             self.appointment.go(data=json.dumps(data), headers=headers)
         except Exception as err:
-            log('Error: %s', type(err).__name__, color='red')
+            log('Error: %s', str(err), color='red')
             return False
 
         if self.page.is_error():
@@ -292,7 +297,7 @@ class Doctolib(LoginBrowser):
                                                        'practice_ids': practice_id,
                                                        'limit': 3})
         except Exception as err:
-            log('Error: %s', type(err).__name__, color='red')
+            log('Error: %s', str(err), color='red')
             return False
 
         second_slot = self.page.find_best_second_slot()
@@ -307,7 +312,7 @@ class Doctolib(LoginBrowser):
         try:
             self.appointment.go(data=json.dumps(data), headers=headers)
         except Exception as err:
-            log('Error: %s', type(err).__name__, color='red')
+            log('Error: %s', str(err), color='red')
             return False
 
         if self.page.is_error():
@@ -320,7 +325,7 @@ class Doctolib(LoginBrowser):
         try:
             self.appointment_edit.go(id=a_id)
         except Exception as err:
-            log('Error: %s', type(err).__name__, color='red')
+            log('Error: %s', str(err), color='red')
             return False
 
         log('Booking for %s %s...',
@@ -330,7 +335,7 @@ class Doctolib(LoginBrowser):
             self.appointment_edit.go(
                 id=a_id, params={'master_patient_id': self.patient['id']})
         except Exception as err:
-            log('Error: %s', type(err).__name__, color='red')
+            log('Error: %s', str(err), color='red')
             return False
 
         custom_fields = {}
@@ -371,7 +376,7 @@ class Doctolib(LoginBrowser):
             self.appointment_post.go(id=a_id, data=json.dumps(
                 data), headers=headers, method='PUT')
         except Exception as err:
-            log('Error: %s', type(err).__name__, color='red')
+            log('Error: %s', str(err), color='red')
             return False
 
         if 'redirection' in self.page.doc:
@@ -381,7 +386,7 @@ class Doctolib(LoginBrowser):
         try:
             self.appointment_post.go(id=a_id)
         except Exception as err:
-            log('Error: %s', type(err).__name__, color='red')
+            log('Error: %s', str(err), color='red')
             return False
 
         confirmation_color = 'green' if self.page.doc['confirmed'] else 'red'
@@ -440,10 +445,12 @@ def main():
         return 1
 
     patients = docto.get_patients()
-    if len(patients) == 0:
+    if patients is None:
+        return 1
+    elif len(patients) == 0:
         print("Please fill your patient data on Doctolib website.")
         return 1
-    if len(patients) > 1:
+    elif len(patients) > 1:
         print('Available patients are:')
         for i, patient in enumerate(patients):
             print('* [%s] %s %s' %
