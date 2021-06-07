@@ -78,10 +78,10 @@ class CenterBookingPage(JsonPage):
 
 
 class AvailabilitiesPage(JsonPage):
-    def find_best_first_slot(self, start_date, period_length):
+    def find_best_first_slot(self, start_date, time_window):
         for a in self.doc['availabilities']:
             d = parse_date(a['date']).date()
-            if d < start_date or d > start_date + relativedelta(days=period_length):
+            if d < start_date or d > start_date + relativedelta(days=time_window):
                 continue
 
             if len(a['slots']) == 0:
@@ -149,7 +149,7 @@ class Doctolib(LoginBrowser):
 
         self.session = session
 
-    def __init__(self, *args, attestation_type, start_date, period_length, include_astrazeneca, **kwargs):
+    def __init__(self, *args, attestation_type, start_date, time_window, excluded_centers, include_astrazeneca, **kwargs):
         super().__init__(*args, **kwargs)
         self.session.headers['sec-fetch-dest'] = 'document'
         self.session.headers['sec-fetch-mode'] = 'navigate'
@@ -170,7 +170,8 @@ class Doctolib(LoginBrowser):
         self.patient = None
         self.attestation_type = attestation_type
         self.start_date = start_date
-        self.period_length = period_length
+        self.time_window = time_window
+        self.excluded_centers = excluded_centers
 
     @property
     def logged(self):
@@ -216,6 +217,8 @@ class Doctolib(LoginBrowser):
             return False
 
         for place in self.page.get_places():
+            if any(center in place['name'] for center in self.excluded_centers):
+                continue
             log('Looking for slots in place %s', place['name'])
             for motive_name, motive_id in motives.items():
                 practice_id = place['practice_ids'][0]
@@ -255,7 +258,7 @@ class Doctolib(LoginBrowser):
             return False
 
         slot = self.page.find_best_first_slot(
-            self.start_date, self.period_length)
+            self.start_date, self.time_window)
         if not slot:
             log('First slot not found :(', color='red')
             return False
@@ -401,12 +404,24 @@ def main():
         description="Book a vaccination slot on Doctolib in Berlin")
     parser.add_argument('--debug', '-d', action='store_true',
                         help='show debug information')
-    parser.add_argument('--astrazeneca', '-az',
-                        action='store_true', help='Include AstraZeneca vaccine')
     parser.add_argument('--start-date', type=datetime.date.fromisoformat,
                         help='Start date of search period (yyyy-mm-dd)')
-    parser.add_argument('--period-length', type=int, default=14,
+    parser.add_argument('--time-window', type=int, default=14,
                         help='Length of the search period in of days after the start date')
+    parser.add_argument('--astrazeneca', '-az',
+                        action='store_true', help='Include AstraZeneca vaccine')
+    parser.add_argument('--exclude-arena', action='store_true',
+                        help='Exclude center at Arena Berlin')
+    parser.add_argument('--exclude-tempelhof', action='store_true',
+                        help='Exclude center at Flughafen Tempelhof')
+    parser.add_argument('--exclude-messe', action='store_true',
+                        help='Exclude center at Messe Berlin')
+    parser.add_argument('--exclude-velodrom',
+                        action='store_true', help='Exclude center at Velodrom Berlin')
+    parser.add_argument('--exclude-tegel', action='store_true',
+                        help='Exclude center at Flughafen Tegel')
+    parser.add_argument('--exclude-eisstadion', action='store_true',
+                        help='Exclude center at Erika-Heß-Eisstadion')
     parser.add_argument('username', help='Doctolib username')
     parser.add_argument('password', nargs='?', help='Doctolib password')
     args = parser.parse_args()
@@ -423,6 +438,20 @@ def main():
     include_astrazeneca = True if args.astrazeneca else False
     start_date = datetime.date.today() if not args.start_date else args.start_date
 
+    excluded_centers = []
+    if args.exclude_arena:
+        excluded_centers.append('Arena')
+    if args.exclude_tempelhof:
+        excluded_centers.append('Tempelhof')
+    if args.exclude_messe:
+        excluded_centers.append('Messe')
+    if args.exclude_velodrom:
+        excluded_centers.append('Velodrom')
+    if args.exclude_tegel:
+        excluded_centers.append('Tegel')
+    if args.exclude_eisstadion:
+        excluded_centers.append('Eisstadion')
+
     attestation_types = ['Einladungsschreiben', 'Ärztliches Attest',
                          'Arbeitgeberbescheinigung', 'Altersnachweis', 'Dienstausweis', 'Sonstiges']
     print('Available attestation types:')
@@ -438,7 +467,7 @@ def main():
         return 1
 
     docto = Doctolib(args.username, args.password, attestation_type=attestation_type,
-                     start_date=start_date, period_length=args.period_length,
+                     start_date=start_date, time_window=args.time_window, excluded_centers=excluded_centers, 
                      include_astrazeneca=include_astrazeneca, responses_dirname=responses_dirname)
     if not docto.do_login():
         print('Could not login!')
