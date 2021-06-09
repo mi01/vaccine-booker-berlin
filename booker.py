@@ -149,7 +149,7 @@ class Doctolib(LoginBrowser):
 
         self.session = session
 
-    def __init__(self, *args, attestation_type, start_date, time_window, excluded_centers, include_astrazeneca, **kwargs):
+    def __init__(self, *args, start_date, time_window, excluded_centers, include_astrazeneca, **kwargs):
         super().__init__(*args, **kwargs)
         self.session.headers['sec-fetch-dest'] = 'document'
         self.session.headers['sec-fetch-mode'] = 'navigate'
@@ -168,7 +168,6 @@ class Doctolib(LoginBrowser):
         self._motive_filter = '(' + s + ')'
         self._logged = False
         self.patient = None
-        self.attestation_type = attestation_type
         self.start_date = start_date
         self.time_window = time_window
         self.excluded_centers = excluded_centers
@@ -347,8 +346,6 @@ class Doctolib(LoginBrowser):
                 value = 'Nein'
             elif field['label'].find('Geschlecht') != -1:
                 value = 'w' if self.patient['gender'] else 'm'
-            elif field['label'].find('Bescheinigung') != -1:
-                value = field['options'][self.attestation_type]
             elif field['placeholder']:
                 value = field['placeholder']
             else:
@@ -452,23 +449,8 @@ def main():
     if args.exclude_eisstadion:
         excluded_centers.append('Eisstadion')
 
-    attestation_types = ['Einladungsschreiben', 'Ärztliches Attest',
-                         'Arbeitgeberbescheinigung', 'Altersnachweis', 'Dienstausweis', 'Sonstiges']
-    print('Available attestation types:')
-    for i, attestation_type in enumerate(attestation_types):
-        print('* [%s] %s' % (i, attestation_type))
-    try:
-        print('Choose attestation type:', end=' ', flush=True)
-        attestation_type = int(sys.stdin.readline().strip())
-        if attestation_type < 0 or attestation_type >= len(attestation_types):
-            raise ValueError()
-    except ValueError:
-        print('Attestation type must be a valid number!')
-        return 1
-
-    docto = Doctolib(args.username, args.password, attestation_type=attestation_type,
-                     start_date=start_date, time_window=args.time_window, excluded_centers=excluded_centers, 
-                     include_astrazeneca=include_astrazeneca, responses_dirname=responses_dirname)
+    docto = Doctolib(args.username, args.password, start_date=start_date, time_window=args.time_window,
+                     excluded_centers=excluded_centers, include_astrazeneca=include_astrazeneca, responses_dirname=responses_dirname)
     if not docto.do_login():
         print('Could not login!')
         return 1
