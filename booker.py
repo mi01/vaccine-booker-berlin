@@ -110,7 +110,7 @@ class AppointmentEditPage(JsonPage):
                 yield field
 
     def get_appointment_start_date(self):
-        return self.doc['appointment']['start_date']
+        return self.doc['appointment']['steps'][0]['start_date']
 
 
 class AppointmentPostPage(JsonPage):
