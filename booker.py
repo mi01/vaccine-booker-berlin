@@ -109,9 +109,6 @@ class AppointmentEditPage(JsonPage):
             if field['required']:
                 yield field
 
-    def get_appointment_start_date(self):
-        return self.doc['appointment']['steps'][0]['start_date']
-
 
 class AppointmentPostPage(JsonPage):
     pass
@@ -359,7 +356,7 @@ class Doctolib(LoginBrowser):
                                 'new_patient': True,
                                 'qualification_answers': {},
                                 'referrer_id': None,
-                                'start_date': self.page.get_appointment_start_date(),
+                                'start_date': slot['start_date'],
                                 },
                 'bypass_mandatory_relative_contact_info': False,
                 'email': self.patient['email'],
