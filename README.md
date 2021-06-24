@@ -39,6 +39,7 @@ positional arguments:
 optional arguments:
   -h, --help                    show this help message and exit
   --debug, -d                   show debug information
+  --dry-run                     do not really book the slot
   --start-date <yyyy-mm-dd>     Start date of search period (yyyy-mm-dd)
   --time-window <days>          Length of the search period in of days after the start date
   --astrazeneca, -az            Include AstraZeneca vaccine

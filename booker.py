@@ -196,7 +196,7 @@ class Doctolib(LoginBrowser):
 
         return self.page.get_patients()
 
-    def try_to_book(self):
+    def try_to_book(self, dry_run=False):
         try:
             center_page = self.center_booking.go()
         except Exception as err:
@@ -224,12 +224,12 @@ class Doctolib(LoginBrowser):
                     continue
 
                 log('Motive: %s ...', motive_name)
-                if self.try_to_book_place(profile_id, motive_id, practice_id, agenda_ids):
+                if self.try_to_book_place(profile_id, motive_id, practice_id, agenda_ids, dry_run):
                     return True
 
         return False
 
-    def try_to_book_place(self, profile_id, motive_id, practice_id, agenda_ids):
+    def try_to_book_place(self, profile_id, motive_id, practice_id, agenda_ids, dry_run=False):
         date = datetime.date.today().strftime('%Y-%m-%d')
         while date is not None:
             try:
@@ -369,6 +369,10 @@ class Doctolib(LoginBrowser):
         # Doctolib does not seem to check the token
         # headers['x-csrf-token'] = self.page.response.headers['x-csrf-token']
 
+        if dry_run:
+            log('Booking status: %s', 'fake')
+            return True
+
         try:
             self.appointment_post.go(id=a_id, data=json.dumps(
                 data), headers=headers, method='PUT')
@@ -398,6 +402,7 @@ def main():
         description="Book a vaccination slot on Doctolib in Berlin")
     parser.add_argument('--debug', '-d', action='store_true',
                         help='show debug information')
+    parser.add_argument('--dry-run', action='store_true', help='do not really book the slot')
     parser.add_argument('--start-date', type=datetime.date.fromisoformat,
                         help='Start date of search period (yyyy-mm-dd)')
     parser.add_argument('--time-window', type=int, default=14,
@@ -480,7 +485,7 @@ def main():
         return 1
 
     while True:
-        if docto.try_to_book():
+        if docto.try_to_book(args.dry_run):
             log('Booked!')
             return 0
         sleep(1)
