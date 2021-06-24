@@ -14,7 +14,7 @@ from dateutil.parser import parse as parse_date
 from dateutil.relativedelta import relativedelta
 from requests.exceptions import Timeout
 from termcolor import colored
-from woob.browser.exceptions import ClientError, ServerError
+from woob.browser.exceptions import ClientError, ServerError, HTTPNotFound
 from woob.browser.browsers import LoginBrowser
 from woob.browser.url import URL
 from woob.browser.pages import JsonPage, HTMLPage
@@ -43,7 +43,18 @@ class Session(cloudscraper.CloudScraper):
 
 
 class LoginPage(JsonPage):
-    pass
+    def redirect(self):
+        return self.doc['redirection']
+
+
+class SendAuthCodePage(JsonPage):
+    def build_doc(self, content):
+        return ""  # Do not choke on empty response from server
+
+
+class ChallengePage(JsonPage):
+    def build_doc(self, content):
+        return ""  # Do not choke on empty response from server
 
 
 class CenterBookingPage(JsonPage):
@@ -126,6 +137,8 @@ class Doctolib(LoginBrowser):
     BASEURL = 'https://www.doctolib.de'
 
     login = URL('/login.json', LoginPage)
+    send_auth_code = URL(r'/api/accounts/send_auth_code', SendAuthCodePage)
+    challenge = URL(r'/login/challenge', ChallengePage)
     center_booking = URL(r'booking/ciz-berlin-berlin.json', CenterBookingPage)
     availabilities = URL(r'/availabilities.json', AvailabilitiesPage)
     second_shot_availabilities = URL(
@@ -176,14 +189,33 @@ class Doctolib(LoginBrowser):
     def do_login(self):
         try:
             self.open(self.BASEURL + '/sessions/new')
+        except ServerError as e:
+            if e.response.status_code in [503] \
+                and 'text/html' in e.response.headers['Content-Type'] \
+                    and ('cloudflare' in e.response.text or 'Checking your browser before accessing' in e .response.text):
+                log('Request blocked by CloudFlare. Try again!', color='red')
+            return False
+        try:
             self.login.go(json={'kind': 'patient',
                                 'username': self.username,
                                 'password': self.password,
                                 'remember': True,
                                 'remember_username': True})
-        except (ClientError, ServerError) as err:
-            log('Error: %s', str(err), color='red')
+        except ClientError:
+            log('Wrong login/password!', color='red')
             return False
+
+        if self.page.redirect() == "/sessions/two-factor":
+            log("Requesting 2fa code ...")
+            self.send_auth_code.go(
+                json={'two_factor_auth_method': 'email'}, method="POST")
+            code = input("Enter auth code: ")
+            try:
+                self.challenge.go(
+                    json={'auth_code': code, 'two_factor_auth_method': 'email'}, method="POST")
+            except HTTPNotFound:
+                log("Invalid auth code!", color='red')
+                return False
 
         return True
 
@@ -402,7 +434,8 @@ def main():
         description="Book a vaccination slot on Doctolib in Berlin")
     parser.add_argument('--debug', '-d', action='store_true',
                         help='show debug information')
-    parser.add_argument('--dry-run', action='store_true', help='do not really book the slot')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='do not really book the slot')
     parser.add_argument('--start-date', type=datetime.date.fromisoformat,
                         help='Start date of search period (yyyy-mm-dd)')
     parser.add_argument('--time-window', type=int, default=14,
