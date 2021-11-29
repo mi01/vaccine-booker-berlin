@@ -9,6 +9,7 @@ import argparse
 import getpass
 import cloudscraper
 
+from enum import Enum
 from urllib.parse import urlparse
 from dateutil.parser import parse as parse_date
 from dateutil.relativedelta import relativedelta
@@ -26,6 +27,15 @@ def log(text, *args, **kwargs):
         text = colored(text, kwargs.pop('color'))
     text = text % tuple(args)
     print('::: ', text, **kwargs)
+
+
+class VaccinationStep(Enum):
+    first = 'first'
+    second = 'second'
+    booster = 'booster'
+
+    def __str__(self):
+        return self.value
 
 
 class Session(cloudscraper.CloudScraper):
@@ -141,8 +151,6 @@ class Doctolib(LoginBrowser):
     challenge = URL(r'/login/challenge', ChallengePage)
     center_booking = URL(r'booking/ciz-berlin-berlin.json', CenterBookingPage)
     availabilities = URL(r'/availabilities.json', AvailabilitiesPage)
-    second_shot_availabilities = URL(
-        r'/second_shot_availabilities.json', AvailabilitiesPage)
     appointment = URL(r'/appointments.json', AppointmentPage)
     appointment_edit = URL(
         r'/appointments/(?P<id>.+)/edit.json', AppointmentEditPage)
@@ -159,25 +167,25 @@ class Doctolib(LoginBrowser):
 
         self.session = session
 
-    def __init__(self, *args, start_date, time_window, excluded_centers, include_astrazeneca, **kwargs):
+    def __init__(self, *args, step, start_date, time_window, excluded_centers, **kwargs):
         super().__init__(*args, **kwargs)
         self.session.headers['sec-fetch-dest'] = 'document'
         self.session.headers['sec-fetch-mode'] = 'navigate'
         self.session.headers['sec-fetch-site'] = 'same-origin'
         self.session.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36'
 
-        vaccines = ['Moderna', 'Pfizer']
-        if include_astrazeneca:
-            vaccines.append('AstraZeneca')
         s = ''
-        for idx, vac in enumerate(vaccines):
-            if idx > 0:
-                s = s + '|'
-            s = s + vac
+        if step == VaccinationStep.first:
+            s = 'Erstimpfung'
+        elif step == VaccinationStep.second:
+            s = 'Zweitimpfung'
+        else:
+            s = 'Auffrischung'
 
         self._motive_filter = '(' + s + ')'
         self._logged = False
         self.patient = None
+        self.step = step
         self.start_date = start_date
         self.time_window = time_window
         self.excluded_centers = excluded_centers
@@ -281,7 +289,7 @@ class Doctolib(LoginBrowser):
             else:
                 date = None
 
-        if len(self.page.doc['availabilities']) == 0:
+        if len(self.page.doc['availabilities']) == 0 or self.page.doc['total'] == 0:
             log('No availabilities in this center', color='red')
             return False
 
@@ -291,12 +299,14 @@ class Doctolib(LoginBrowser):
             log('First slot not found :(', color='red')
             return False
 
-        log('Best slot found: %s', parse_date(
-            slot['start_date']).strftime('%c'), color='green')
+        start_date = slot
+        if isinstance(slot, dict):
+            start_date = slot['start_date']
+        log('Best slot found: %s', parse_date(start_date).strftime('%c'), color='green')
 
         appointment = {'profile_id':    profile_id,
                        'source_action': 'profile',
-                       'start_date':    slot['start_date'],
+                       'start_date':    start_date,
                        'visit_motive_ids': str(motive_id),
                        }
 
@@ -319,37 +329,38 @@ class Doctolib(LoginBrowser):
                 self.page.get_error(), color='red')
             return False
 
-        try:
-            self.second_shot_availabilities.go(params={'start_date': slot['steps'][1]['start_date'].split('T')[0],
+        if self.step == VaccinationStep.first:
+            try:
+                self.availabilities.go(params={'start_date': slot['steps'][1]['start_date'].split('T')[0],
                                                        'visit_motive_ids': motive_id,
                                                        'agenda_ids': '-'.join(agenda_ids),
                                                        'first_slot': slot['start_date'],
                                                        'insurance_sector': 'public',
                                                        'practice_ids': practice_id,
                                                        'limit': 3})
-        except Exception as err:
-            log('Error: %s', str(err), color='red')
-            return False
+            except Exception as err:
+                log('Error: %s', str(err), color='red')
+                return False
 
-        second_slot = self.page.find_best_second_slot()
-        if not second_slot:
-            log('No second shot found!', color='red')
-            return False
+            second_slot = self.page.find_best_second_slot()
+            if not second_slot:
+                log('No second shot found!', color='red')
+                return False
 
-        log('Second shot: %s', parse_date(
-            second_slot['start_date']).strftime('%c'), color='green')
+            log('Second shot: %s', parse_date(
+                second_slot['start_date']).strftime('%c'), color='green')
 
-        data['second_slot'] = second_slot['start_date']
-        try:
-            self.appointment.go(data=json.dumps(data), headers=headers)
-        except Exception as err:
-            log('Error: %s', str(err), color='red')
-            return False
+            data['second_slot'] = second_slot['start_date']
+            try:
+                self.appointment.go(data=json.dumps(data), headers=headers)
+            except Exception as err:
+                log('Error: %s', str(err), color='red')
+                return False
 
-        if self.page.is_error():
-            log('Appointment not available anymore :( %s',
-                self.page.get_error(), color='red')
-            return False
+            if self.page.is_error():
+                log('Appointment not available anymore :( %s',
+                    self.page.get_error(), color='red')
+                return False
 
         a_id = self.page.doc['id']
 
@@ -388,7 +399,7 @@ class Doctolib(LoginBrowser):
                                 'new_patient': True,
                                 'qualification_answers': {},
                                 'referrer_id': None,
-                                'start_date': slot['start_date'],
+                                'start_date': start_date,
                                 },
                 'bypass_mandatory_relative_contact_info': False,
                 'email': self.patient['email'],
@@ -432,6 +443,7 @@ class Doctolib(LoginBrowser):
 def main():
     parser = argparse.ArgumentParser(
         description="Book a vaccination slot on Doctolib in Berlin")
+    parser.add_argument('step', type=VaccinationStep, choices=list(VaccinationStep))
     parser.add_argument('--debug', '-d', action='store_true',
                         help='show debug information')
     parser.add_argument('--dry-run', action='store_true',
@@ -440,20 +452,14 @@ def main():
                         help='Start date of search period (yyyy-mm-dd)')
     parser.add_argument('--time-window', type=int, default=14,
                         help='Length of the search period in of days after the start date')
-    parser.add_argument('--astrazeneca', '-az',
-                        action='store_true', help='Include AstraZeneca vaccine')
-    parser.add_argument('--exclude-arena', action='store_true',
-                        help='Exclude center at Arena Berlin')
-    parser.add_argument('--exclude-tempelhof', action='store_true',
-                        help='Exclude center at Flughafen Tempelhof')
     parser.add_argument('--exclude-messe', action='store_true',
                         help='Exclude center at Messe Berlin')
-    parser.add_argument('--exclude-velodrom',
-                        action='store_true', help='Exclude center at Velodrom Berlin')
     parser.add_argument('--exclude-tegel', action='store_true',
                         help='Exclude center at Flughafen Tegel')
-    parser.add_argument('--exclude-eisstadion', action='store_true',
-                        help='Exclude center at Erika-Heß-Eisstadion')
+    parser.add_argument('--exclude-ring-center', action='store_true',
+                        help='Exclude center at Ring-Center')
+    parser.add_argument('--exclude-karlshorst', action='store_true',
+                        help='Exclude center at Trabrennbahn Karlshorst')
     parser.add_argument('username', help='Doctolib username')
     parser.add_argument('password', nargs='?', help='Doctolib password')
     args = parser.parse_args()
@@ -467,25 +473,20 @@ def main():
     else:
         responses_dirname = None
 
-    include_astrazeneca = True if args.astrazeneca else False
     start_date = datetime.date.today() if not args.start_date else args.start_date
 
     excluded_centers = []
-    if args.exclude_arena:
-        excluded_centers.append('Arena')
-    if args.exclude_tempelhof:
-        excluded_centers.append('Tempelhof')
     if args.exclude_messe:
         excluded_centers.append('Messe')
-    if args.exclude_velodrom:
-        excluded_centers.append('Velodrom')
     if args.exclude_tegel:
         excluded_centers.append('Tegel')
-    if args.exclude_eisstadion:
-        excluded_centers.append('Eisstadion')
+    if args.exclude_ring_center:
+        excluded_centers.append('Ring')
+    if args.exclude_karlshorst:
+        excluded_centers.append('Karlshorst')
 
-    docto = Doctolib(args.username, args.password, start_date=start_date, time_window=args.time_window,
-                     excluded_centers=excluded_centers, include_astrazeneca=include_astrazeneca, responses_dirname=responses_dirname)
+    docto = Doctolib(args.username, args.password, step=args.step, start_date=start_date, time_window=args.time_window,
+                     excluded_centers=excluded_centers, responses_dirname=responses_dirname)
     if not docto.do_login():
         print('Could not login!')
         return 1
