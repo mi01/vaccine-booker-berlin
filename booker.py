@@ -46,7 +46,6 @@ class Session(cloudscraper.CloudScraper):
         if is_async:
             raise ValueError('Async requests are not supported')
 
-        kwargs['timeout'] = 15.0
         resp = super().send(*args, **kwargs)
 
         return callback(self, resp)
@@ -302,7 +301,8 @@ class Doctolib(LoginBrowser):
         start_date = slot
         if isinstance(slot, dict):
             start_date = slot['start_date']
-        log('Best slot found: %s', parse_date(start_date).strftime('%c'), color='green')
+        log('Best slot found: %s', parse_date(
+            start_date).strftime('%c'), color='green')
 
         appointment = {'profile_id':    profile_id,
                        'source_action': 'profile',
@@ -332,12 +332,12 @@ class Doctolib(LoginBrowser):
         if self.step == VaccinationStep.first:
             try:
                 self.availabilities.go(params={'start_date': slot['steps'][1]['start_date'].split('T')[0],
-                                                       'visit_motive_ids': motive_id,
-                                                       'agenda_ids': '-'.join(agenda_ids),
-                                                       'first_slot': slot['start_date'],
-                                                       'insurance_sector': 'public',
-                                                       'practice_ids': practice_id,
-                                                       'limit': 3})
+                                               'visit_motive_ids': motive_id,
+                                               'agenda_ids': '-'.join(agenda_ids),
+                                               'first_slot': slot['start_date'],
+                                               'insurance_sector': 'public',
+                                               'practice_ids': practice_id,
+                                               'limit': 3})
             except Exception as err:
                 log('Error: %s', str(err), color='red')
                 return False
@@ -402,11 +402,11 @@ class Doctolib(LoginBrowser):
                                 'start_date': start_date,
                                 },
                 'bypass_mandatory_relative_contact_info': False,
-                'email': self.patient['email'],
+                'email': None,
                 'master_patient': self.patient,
                 'new_patient': True,
                 'patient': None,
-                'phone_number': self.patient['phone_number']
+                'phone_number': None,
                 }
 
         # Doctolib does not seem to check the token
@@ -443,7 +443,8 @@ class Doctolib(LoginBrowser):
 def main():
     parser = argparse.ArgumentParser(
         description="Book a vaccination slot on Doctolib in Berlin")
-    parser.add_argument('step', type=VaccinationStep, choices=list(VaccinationStep))
+    parser.add_argument('step', type=VaccinationStep,
+                        choices=list(VaccinationStep))
     parser.add_argument('--debug', '-d', action='store_true',
                         help='show debug information')
     parser.add_argument('--dry-run', action='store_true',
